@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools Hub 🛠️ - 工具聚合站</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🛠️</span>
+        <div>
+          <h1>Tools Hub</h1>
+          <p>工具聚合站</p>
+        </div>
+      </div>
+      <button id="theme-btn" title="切换主题">🌙</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="search-wrap">
+      <input type="search" id="search-input" placeholder="🔍 搜索工具名称或描述..." autocomplete="off">
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-cat="all">全部 <span id="count-all" class="badge"></span></button>
+      <button class="tab" data-cat="time">⏰ 时间</button>
+      <button class="tab" data-cat="text">📝 文本</button>
+      <button class="tab" data-cat="calc">🧮 计算</button>
+      <button class="tab" data-cat="dev">💻 开发</button>
+      <button class="tab" data-cat="life">🌟 生活</button>
+    </div>
+
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>😕 没有找到匹配的工具</div>
+  </main>
+
+  <!-- Modal -->
+  <div class="overlay" id="overlay">
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="modal-title"></h2>
+        <button class="close-btn" id="close-btn" title="关闭">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <footer>
+    <p>🌐 Powered by <a href="https://pages.cloudflare.com" target="_blank">Cloudflare Pages</a> &nbsp;|&nbsp; 🛠️ Tools Hub</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -32,6 +32,7 @@ const TOOLS = [
   { id: 'colorpicker',name: '颜色选择器',    emoji: '🎨', cat: 'dev',  desc: '选取颜色，获取 HEX/RGB/HSL' },
   { id: 'password',   name: '密码生成器',    emoji: '🔑', cat: 'dev',  desc: '生成高强度随机密码' },
   { id: 'jsonformat', name: 'JSON 格式化',   emoji: '📋', cat: 'dev',  desc: '格式化、压缩与校验 JSON' },
+  { id: 'wstest',     name: 'WebSocket 测试',emoji: '🔌', cat: 'dev',  desc: '专业 WS/WSS 调试，消息缓存与历史记录' },
   { id: 'qrcode',     name: '二维码生成',    emoji: '📱', cat: 'life', desc: '将文字或链接生成二维码' },
 ];
 
@@ -104,6 +105,9 @@ function openTool(id) {
   if (!tool) return;
   document.getElementById('modal-title').textContent = `${tool.emoji} ${tool.name}`;
   document.getElementById('modal-body').innerHTML = getToolContent(id);
+  const modal = document.getElementById('modal');
+  if (id === 'wstest') modal.classList.add('modal-wide');
+  else modal.classList.remove('modal-wide');
   overlay.classList.add('open');
   initTool(id);
 }
@@ -112,6 +116,7 @@ function closeTool() {
   overlay.classList.remove('open');
   Object.values(toolTimers).forEach(clearInterval);
   toolTimers = {};
+  wsDisconnect();
 }
 
 document.getElementById('close-btn').addEventListener('click', closeTool);
@@ -388,6 +393,70 @@ function getToolContent(id) {
         <p style="color:var(--text-muted)">点击生成按钮后显示二维码</p>
       </div>`;
 
+    case 'wstest': return `
+      <div class="ws-url-bar">
+        <input class="tool-input" id="ws-url" type="text"
+          placeholder="ws://localhost:8080 或 wss://echo.websocket.org"
+          list="ws-url-history" autocomplete="off" style="flex:1;min-width:0">
+        <datalist id="ws-url-history"></datalist>
+        <button class="btn btn-primary" id="ws-connect-btn" style="white-space:nowrap;flex-shrink:0">连接</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span id="ws-status" class="ws-status ws-disconnected">● 未连接</span>
+        <label style="font-size:.78rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="ws-auto-reconnect"> 自动重连
+        </label>
+        <label style="font-size:.78rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="ws-auto-scroll" checked> 滚动到底
+        </label>
+      </div>
+
+      <div class="ws-subtabs">
+        <button class="ws-tab active" data-tab="send">📤 发送</button>
+        <button class="ws-tab" data-tab="saved">💾 已保存</button>
+        <button class="ws-tab" data-tab="urlhist">🕐 地址历史</button>
+      </div>
+
+      <div id="ws-panel-send" class="ws-panel">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <select class="tool-select" id="ws-format" style="width:auto;flex-shrink:0">
+            <option value="text">Text</option>
+            <option value="json">JSON</option>
+            <option value="binary">Binary (Hex)</option>
+          </select>
+          <input class="tool-input" id="ws-msg-name" placeholder="消息名称（留空则自动命名）" style="flex:1;min-width:120px">
+          <button class="btn btn-secondary" id="ws-fmt-btn" style="flex-shrink:0" title="格式化 JSON">{ }</button>
+        </div>
+        <textarea class="tool-textarea" id="ws-msg"
+          placeholder='输入消息内容&#10;JSON 示例：{"type":"ping","id":1}'
+          style="min-height:100px;font-size:.85rem"></textarea>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn-primary" id="ws-send-btn">▶ 发送</button>
+          <button class="btn btn-secondary" id="ws-save-msg-btn">💾 保存消息</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('ws-msg').value=''">✕ 清空</button>
+        </div>
+      </div>
+
+      <div id="ws-panel-saved" class="ws-panel" hidden>
+        <div id="ws-saved-list"></div>
+      </div>
+
+      <div id="ws-panel-urlhist" class="ws-panel" hidden>
+        <div id="ws-url-hist-list"></div>
+      </div>
+
+      <div class="ws-log-header">
+        <span class="tool-label" style="margin:0">消息日志</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:.78rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="ws-show-sys" checked> 系统消息
+          </label>
+          <span id="ws-msg-count" style="font-size:.78rem;color:var(--text-muted)">0 条</span>
+          <button class="btn btn-secondary" id="ws-clear-log" style="padding:4px 10px;font-size:.78rem">清除</button>
+        </div>
+      </div>
+      <div id="ws-log" class="ws-log"></div>`;
+
     default: return '<p style="color:var(--text-muted)">工具开发中...</p>';
   }
 }
@@ -416,6 +485,9 @@ function initTool(id) {
       break;
     case 'calculator':
       calcState = { expr: '', val: '0', newNum: true };
+      break;
+    case 'wstest':
+      initWsTest();
       break;
   }
 }
@@ -819,6 +891,342 @@ function genQR() {
     <img src="${url}" alt="QR Code"
       onerror="this.parentElement.innerHTML='<p style=color:var(--accent)>❌ 生成失败，请检查网络</p>'">
     <p style="margin-top:10px;font-size:.75rem;color:var(--text-muted)">右键图片可保存</p>`;
+}
+
+// ── WEBSOCKET TESTER ─────────────────────────────────────────────────────────
+let wsConn = null;
+let wsAutoReconnectTimer = null;
+let wsTotalMsgs = 0;
+
+function wsDisconnect() {
+  clearTimeout(wsAutoReconnectTimer);
+  if (wsConn) {
+    wsConn.onclose = null;
+    wsConn.onerror = null;
+    wsConn.close();
+    wsConn = null;
+  }
+}
+
+function initWsTest() {
+  const savedUrls = JSON.parse(localStorage.getItem('ws_urls') || '[]');
+  const savedMsgs = JSON.parse(localStorage.getItem('ws_saved_msgs') || '[]');
+
+  wsRenderUrlHistory(savedUrls);
+  wsRenderSavedMsgs(savedMsgs);
+  wsRenderUrlHistList(savedUrls);
+  wsTotalMsgs = 0;
+
+  document.getElementById('ws-connect-btn').addEventListener('click', wsToggleConnect);
+  document.getElementById('ws-send-btn').addEventListener('click', wsSendMsg);
+  document.getElementById('ws-save-msg-btn').addEventListener('click', wsSaveCurrentMsg);
+  document.getElementById('ws-clear-log').addEventListener('click', wsClearLog);
+  document.getElementById('ws-fmt-btn').addEventListener('click', wsFormatJson);
+
+  document.getElementById('ws-show-sys').addEventListener('change', () => {
+    document.querySelectorAll('.ws-log-system, .ws-log-error').forEach(el => {
+      el.style.display = document.getElementById('ws-show-sys').checked ? '' : 'none';
+    });
+  });
+
+  document.getElementById('ws-url').addEventListener('keydown', e => {
+    if (e.key === 'Enter') wsToggleConnect();
+  });
+  document.getElementById('ws-msg').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) wsSendMsg();
+  });
+
+  document.querySelectorAll('.ws-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ws-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ws-panel').forEach(p => { p.hidden = true; });
+      tab.classList.add('active');
+      document.getElementById('ws-panel-' + tab.dataset.tab).hidden = false;
+    });
+  });
+}
+
+function wsToggleConnect() {
+  const url = document.getElementById('ws-url').value.trim();
+  const btn = document.getElementById('ws-connect-btn');
+
+  if (wsConn && (wsConn.readyState === WebSocket.OPEN || wsConn.readyState === WebSocket.CONNECTING)) {
+    clearTimeout(wsAutoReconnectTimer);
+    wsConn.onclose = null;
+    wsConn.close();
+    wsConn = null;
+    wsSetStatus('disconnected');
+    btn.textContent = '连接';
+    btn.className = 'btn btn-primary';
+    wsAddLog('system', '🔌 已手动断开连接');
+    return;
+  }
+
+  if (!url) { showToast('⚠️ 请输入 WebSocket 地址'); return; }
+  if (!/^wss?:\/\//i.test(url)) { showToast('⚠️ 地址须以 ws:// 或 wss:// 开头'); return; }
+
+  wsSetStatus('connecting');
+  btn.textContent = '断开';
+  btn.className = 'btn btn-secondary';
+  wsAddLog('system', `⟳ 正在连接 ${url} ...`);
+
+  try {
+    wsConn = new WebSocket(url);
+  } catch (e) {
+    wsSetStatus('disconnected');
+    btn.textContent = '连接';
+    btn.className = 'btn btn-primary';
+    wsAddLog('error', '❌ 创建连接失败：' + e.message);
+    return;
+  }
+
+  wsConn.onopen = () => {
+    wsSetStatus('connected');
+    wsAddLog('system', `✅ 已连接 (protocol: "${wsConn.protocol || 'none'}")`);
+
+    const urls = JSON.parse(localStorage.getItem('ws_urls') || '[]');
+    if (!urls.includes(url)) {
+      urls.unshift(url);
+      if (urls.length > 15) urls.pop();
+      localStorage.setItem('ws_urls', JSON.stringify(urls));
+      wsRenderUrlHistory(urls);
+      wsRenderUrlHistList(urls);
+    }
+  };
+
+  wsConn.onmessage = e => {
+    wsAddLog('recv', typeof e.data === 'string' ? e.data : '[Binary] ' + e.data.byteLength + ' bytes');
+  };
+
+  wsConn.onerror = () => {
+    wsAddLog('error', '❌ 连接发生错误');
+  };
+
+  wsConn.onclose = e => {
+    wsConn = null;
+    wsSetStatus('disconnected');
+    wsAddLog('system', `🔌 连接关闭 (code: ${e.code}${e.reason ? ', reason: ' + e.reason : ''})`);
+    const btn2 = document.getElementById('ws-connect-btn');
+    if (btn2) { btn2.textContent = '连接'; btn2.className = 'btn btn-primary'; }
+
+    const autoReconnect = document.getElementById('ws-auto-reconnect');
+    if (autoReconnect && autoReconnect.checked && e.code !== 1000) {
+      wsAddLog('system', '⟳ 3 秒后自动重连...');
+      wsAutoReconnectTimer = setTimeout(wsToggleConnect, 3000);
+    }
+  };
+}
+
+function wsSendMsg() {
+  if (!wsConn || wsConn.readyState !== WebSocket.OPEN) {
+    showToast('⚠️ 请先连接 WebSocket');
+    return;
+  }
+  const msg = document.getElementById('ws-msg').value;
+  if (!msg.trim()) { showToast('⚠️ 消息不能为空'); return; }
+
+  const format = document.getElementById('ws-format').value;
+  let toSend = msg;
+
+  if (format === 'json') {
+    try { JSON.parse(msg); } catch (e) {
+      showToast('❌ JSON 格式错误：' + e.message); return;
+    }
+    toSend = JSON.stringify(JSON.parse(msg));
+  } else if (format === 'binary') {
+    const bytes = msg.replace(/\s/g, '').match(/.{1,2}/g) || [];
+    try {
+      const arr = new Uint8Array(bytes.map(b => parseInt(b, 16)));
+      wsConn.send(arr.buffer);
+      wsAddLog('send', '[Binary] ' + arr.length + ' bytes: ' + msg.trim());
+      return;
+    } catch (e) {
+      showToast('❌ 十六进制格式错误'); return;
+    }
+  }
+
+  wsConn.send(toSend);
+  wsAddLog('send', toSend);
+}
+
+function wsFormatJson() {
+  const ta = document.getElementById('ws-msg');
+  try {
+    ta.value = JSON.stringify(JSON.parse(ta.value), null, 2);
+  } catch (e) {
+    showToast('❌ 不是有效的 JSON');
+  }
+}
+
+function wsSaveCurrentMsg() {
+  const content = document.getElementById('ws-msg').value.trim();
+  if (!content) { showToast('⚠️ 消息内容不能为空'); return; }
+  const rawName = document.getElementById('ws-msg-name').value.trim();
+  const name = rawName || content.slice(0, 30);
+
+  const msgs = JSON.parse(localStorage.getItem('ws_saved_msgs') || '[]');
+  msgs.unshift({ name, content, time: Date.now() });
+  if (msgs.length > 30) msgs.pop();
+  localStorage.setItem('ws_saved_msgs', JSON.stringify(msgs));
+  wsRenderSavedMsgs(msgs);
+  document.getElementById('ws-msg-name').value = '';
+  showToast('✅ 消息已保存');
+}
+
+function wsClearLog() {
+  const logEl = document.getElementById('ws-log');
+  if (logEl) logEl.innerHTML = '';
+  wsTotalMsgs = 0;
+  const cnt = document.getElementById('ws-msg-count');
+  if (cnt) cnt.textContent = '0 条';
+}
+
+function wsSetStatus(state) {
+  const el = document.getElementById('ws-status');
+  if (!el) return;
+  const map = {
+    disconnected: ['● 未连接',   'ws-status ws-disconnected'],
+    connecting:   ['⟳ 连接中…', 'ws-status ws-connecting'],
+    connected:    ['● 已连接',   'ws-status ws-connected'],
+  };
+  const [text, cls] = map[state] || map.disconnected;
+  el.textContent = text;
+  el.className = cls;
+}
+
+function wsAddLog(type, msg) {
+  const logEl = document.getElementById('ws-log');
+  if (!logEl) return;
+
+  wsTotalMsgs++;
+  const cnt = document.getElementById('ws-msg-count');
+  if (cnt) cnt.textContent = wsTotalMsgs + ' 条';
+
+  const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const icons = { send: '↑ 发', recv: '↓ 收', system: '• 系统', error: '✕ 错误' };
+
+  let displayMsg = msg;
+  if (type === 'send' || type === 'recv') {
+    try { displayMsg = JSON.stringify(JSON.parse(msg), null, 2); } catch {}
+  }
+
+  const item = document.createElement('div');
+  item.className = `ws-log-item ws-log-${type}`;
+
+  const showSys = document.getElementById('ws-show-sys');
+  if ((type === 'system' || type === 'error') && showSys && !showSys.checked) {
+    item.style.display = 'none';
+  }
+
+  item.innerHTML =
+    `<div class="ws-log-meta">` +
+    `<span class="ws-log-badge ws-badge-${type}">${icons[type] || type}</span>` +
+    `<span class="ws-log-time">${now}</span>` +
+    `<button class="ws-copy-btn" title="复制" onclick="wsLogCopy(this)">⎘</button>` +
+    `</div>` +
+    `<pre class="ws-log-content">${wsEscape(displayMsg)}</pre>`;
+
+  item.querySelector('pre').dataset.raw = msg;
+
+  logEl.appendChild(item);
+
+  const autoScroll = document.getElementById('ws-auto-scroll');
+  if (!autoScroll || autoScroll.checked) {
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function wsLogCopy(btn) {
+  const pre = btn.closest('.ws-log-item').querySelector('pre');
+  const text = pre.dataset.raw || pre.textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('✅ 已复制'))
+    .catch(() => showToast('❌ 复制失败'));
+}
+
+function wsEscape(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function wsRenderUrlHistory(urls) {
+  const dl = document.getElementById('ws-url-history');
+  if (dl) dl.innerHTML = urls.map(u => `<option value="${wsEscape(u)}">`).join('');
+}
+
+function wsRenderUrlHistList(urls) {
+  const el = document.getElementById('ws-url-hist-list');
+  if (!el) return;
+  if (!urls.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);padding:12px;text-align:center">暂无历史地址</p>';
+    return;
+  }
+  el.innerHTML = urls.map((u, i) => `
+    <div class="ws-saved-item">
+      <div class="ws-saved-name" title="${wsEscape(u)}">${wsEscape(u)}</div>
+      <div class="ws-saved-actions">
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:.78rem"
+          onclick="document.getElementById('ws-url').value=${JSON.stringify(u)};wsActivateTab('send')">载入</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:.78rem;color:var(--accent)"
+          onclick="wsDeleteUrl(${i})">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function wsRenderSavedMsgs(msgs) {
+  const el = document.getElementById('ws-saved-list');
+  if (!el) return;
+  if (!msgs.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);padding:12px;text-align:center">暂无已保存的消息</p>';
+    return;
+  }
+  el.innerHTML = msgs.map((m, i) => `
+    <div class="ws-saved-item">
+      <div class="ws-saved-name" title="${wsEscape(m.content)}">${wsEscape(m.name)}</div>
+      <div class="ws-saved-actions">
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:.78rem"
+          onclick="wsLoadMsg(${i})">载入</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:.78rem"
+          onclick="wsLoadAndSend(${i})" title="载入并直接发送">⚡</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:.78rem;color:var(--accent)"
+          onclick="wsDeleteMsg(${i})">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function wsLoadMsg(i) {
+  const msgs = JSON.parse(localStorage.getItem('ws_saved_msgs') || '[]');
+  if (!msgs[i]) return;
+  document.getElementById('ws-msg').value = msgs[i].content;
+  wsActivateTab('send');
+}
+
+function wsLoadAndSend(i) {
+  wsLoadMsg(i);
+  wsSendMsg();
+}
+
+function wsDeleteMsg(i) {
+  const msgs = JSON.parse(localStorage.getItem('ws_saved_msgs') || '[]');
+  msgs.splice(i, 1);
+  localStorage.setItem('ws_saved_msgs', JSON.stringify(msgs));
+  wsRenderSavedMsgs(msgs);
+}
+
+function wsDeleteUrl(i) {
+  const urls = JSON.parse(localStorage.getItem('ws_urls') || '[]');
+  urls.splice(i, 1);
+  localStorage.setItem('ws_urls', JSON.stringify(urls));
+  wsRenderUrlHistory(urls);
+  wsRenderUrlHistList(urls);
+}
+
+function wsActivateTab(tabId) {
+  document.querySelectorAll('.ws-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ws-panel').forEach(p => { p.hidden = true; });
+  const tab = document.querySelector(`.ws-tab[data-tab="${tabId}"]`);
+  if (tab) tab.classList.add('active');
+  const panel = document.getElementById('ws-panel-' + tabId);
+  if (panel) panel.hidden = false;
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
